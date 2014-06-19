@@ -4,7 +4,15 @@ import scala.util.parsing.combinator.RegexParsers
 import scala.util.parsing.combinator.lexical.StdLexical
 import scala.util.parsing.input.CharSequenceReader
 
-sealed trait Joy
+sealed trait Joy {
+  final override def toString = this match {
+    case Joy.Int(value)     => value.toString
+    case Joy.Bool(value)    => value.toString
+    case Joy.Name(value)    => value
+    case Joy.Quoted(elems)  => elems.mkString("[", " ", "]")
+    case Joy.Program(elems) => elems.mkString("", " ", "")
+  }
+}
 object Joy {
   final case class Int(value: scala.Int) extends Joy
   final case class Bool(value: scala.Boolean) extends Joy
