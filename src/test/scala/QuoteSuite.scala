@@ -21,4 +21,9 @@ class QuoteSuite extends FunSuite {
                          Joy.Quoted(List(Joy.Int(2), Joy.Name("mod"))),
                          Joy.Name("filter"))) = j"[1 2 3] [2 mod] filter"
   }
+
+  test("$two $two +") {
+    val two = j"2"
+    val Joy.Program(List(Joy.Int(2), Joy.Int(2), Joy.Name("+"))) = j"$two $two +"
+  }
 }
