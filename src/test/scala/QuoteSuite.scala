@@ -5,11 +5,11 @@ import Joy.parse
 
 class QuoteSuite extends FunSuite {
   test("42") {
-    val Joy.Program(List(Joy.Int(42))) = j"42"
+    val Joy.Int(42) = j"42"
   }
 
   test("x") {
-    val Joy.Program(List(Joy.Name("x"))) = j"x"
+    val Joy.Name("x") = j"x"
   }
 
   test("1 1 add") {
