@@ -69,7 +69,16 @@ package joy {
         }
       case TermName("unapply") =>
         val x = TermName(s"x$i")
-        pq"$x @ _"
+        val subpattern = c.internal.subpatterns(args.head).get.apply(i)
+        subpattern match {
+          case pq"$_: $tpt" =>
+            val tpe = c.typecheck(tpt, c.TYPEmode).tpe
+            val UnliftT = appliedType(typeOf[Joy.Unlift[_]], tpe)
+            val unlift = c.inferImplicitValue(UnliftT, silent = true)
+            if (unlift.nonEmpty) pq"$unlift($x @ _)"
+            else c.abort(subpattern.pos, s"couldn't find implicit value of type Unlift[$tpe]")
+          case _ => pq"$x @ _"
+        }
     }
 
     implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>

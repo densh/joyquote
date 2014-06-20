@@ -106,4 +106,10 @@ class QuotePatSuite extends FunSuite {
     val j"a ..$bc" = j"a b c"
     val List(j"b", j"c") = bc
   }
+
+  test("${a: Int} ${b: Int} +") {
+    val j"${a: Int} ${b: Int} +" = j"1 2 +"
+    assert(a == 1)
+    assert(b == 2)
+  }
 }

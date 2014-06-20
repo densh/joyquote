@@ -55,4 +55,17 @@ object Joy {
     implicit def liftSym: Lift[Symbol] = Lift { sym => Joy.Name(sym.name) }
     implicit def liftList[T](implicit liftT: Lift[T]): Lift[List[T]] = Lift { l => Joy.Quoted(l.map(liftT(_))) }
   }
+
+  trait Unlift[T] { def unapply(joy: Joy): Option[T] }
+  object Unlift {
+    def apply[T](pf: PartialFunction[Joy, T]): Unlift[T] = new Unlift[T] { def unapply(joy: Joy) = pf.lift(joy) }
+
+    implicit val unliftJoy: Unlift[Joy] = Unlift { case j => j }
+    implicit val unliftInt: Unlift[scala.Int] = Unlift { case Joy.Int(i) => i }
+    implicit val unliftBool: Unlift[scala.Boolean] = Unlift { case Joy.Bool(b) => b }
+    implicit val unliftSym: Unlift[Symbol] = Unlift { case Joy.Name(value) => Symbol(value) }
+    implicit def unliftList[T](implicit unlift: Unlift[T]): Unlift[List[T]] = Unlift {
+      case Joy.Quoted(elems) if elems.forall(unlift.unapply(_).nonEmpty) => elems.flatMap(unlift.unapply(_))
+    }
+  }
 }
