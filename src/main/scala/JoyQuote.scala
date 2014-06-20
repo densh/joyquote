@@ -3,11 +3,19 @@ import scala.reflect.macros.whitebox.Context
 
 package object joy {
   implicit class JoyQuote(ctx: StringContext) {
-    def j[T](args: T*): Joy = macro JoyQuoteImpl.apply
+    object j {
+      def apply[T](args: T*): Joy = macro JoyQuoteImpl.apply
+      def unapply(scrutinee: Any): Any = macro JoyQuoteImpl.unapply
+    }
   }
 }
 
 package joy {
+  object ` :+ ` {
+    def apply[T](elems: List[T], elem: T): List[T] = elems :+ elem
+    def unapply[T](elems:List[T]): Option[(List[T], T)] = :+.unapply(elems)
+  }
+
   private[joy] object Hole {
     val pat = java.util.regex.Pattern.compile("^\\$placeholder(\\d+)$")
     def apply(i: Int) = s"$$placeholder$i"
@@ -20,7 +28,8 @@ package joy {
   private[joy] class JoyQuoteImpl(val c: Context) {
     import c.universe._
 
-    lazy val q"$_($_(..${parts: List[String]})).j[..$_](..$args)" = c.macroApplication
+    lazy val q"$_($_(..${parts: List[String]})).j.$method[..$_](..$args)" =
+      c.macroApplication
 
     lazy val IterableClass: TypeSymbol =
       typeOf[Iterable[_]].typeSymbol.asType
@@ -61,9 +70,9 @@ package joy {
 
     implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>
       def prepend(joys: List[Joy], t: Tree) =
-        joys.foldRight(t) { case (j, acc) => q"$j :: $acc" }
+        joys.foldRight(t) { case (j, acc) => q"_root_.scala.collection.immutable.::($j, $acc)" }
       def append(t: Tree, joys: List[Joy]) =
-        joys.foldLeft(t) { case (acc, j) => q"$acc :+ $j" }
+        joys.foldLeft(t) { case (acc, j) => q"_root_.joy.` :+ `($acc, $j)" }
 
       val (pre, middle) = joys.span(_ != Joy.Name(".."))
       middle match {
@@ -85,6 +94,21 @@ package joy {
       case Joy.Program(joys) => q"_root_.joy.Joy.Program($joys)"
     }
 
-    def apply(args: Tree*) = lift(flatten(Joy.parse(code()).get))
+    def wrap(joy: Joy): Tree = method match {
+      case TermName("apply") => lift(joy)
+      case TermName("unapply") =>
+        q"""
+          new {
+            def unapply(input: Joy) = input match {
+              case $joy => true
+              case _    => false
+            }
+          }.unapply(..$args)
+        """
+    }
+
+    def expand = wrap(flatten(Joy.parse(code()).get))
+    def apply(args: Tree*) = expand
+    def unapply(scrutinee: Tree) = expand
   }
 }

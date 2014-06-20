@@ -3,7 +3,7 @@ package joy
 import org.scalatest.FunSuite
 import Joy.parse
 
-class QuoteSuite extends FunSuite {
+class QuoteExprSuite extends FunSuite {
   test("42") {
     val Joy.Int(42) = j"42"
   }
@@ -73,5 +73,23 @@ class QuoteSuite extends FunSuite {
   test("0 ..$prog") {
     val prog = j"1 2"
     val Joy.Program(List(Joy.Int(0), Joy.Int(1), Joy.Int(2))) = j"0 ..$prog"
+  }
+}
+
+class QuotePatSuite extends FunSuite {
+  test("42") {
+    val j"42" = Joy.Int(42)
+  }
+
+  test("foo") {
+    val j"foo" = Joy.Name("foo")
+  }
+
+  test("[1 2 +]") {
+    val j"[1 2 +]" = Joy.Quoted(List(Joy.Int(1), Joy.Int(2), Joy.Name("+")))
+  }
+
+  test("1 2 +") {
+    val j"1 2 +" = Joy.Program(List(Joy.Int(1), Joy.Int(2), Joy.Name("+")))
   }
 }
