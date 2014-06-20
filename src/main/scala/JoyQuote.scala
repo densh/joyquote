@@ -32,14 +32,33 @@ package joy {
       case _                     => joy
     }
 
-    def arg(i: Int): Tree = {
-      val arg = args(i)
-      val tpe = arg.tpe
-      if (tpe <:< typeOf[Joy]) arg
+    def arg(i: Int, dotted: Boolean = false): Tree =
+      if (dotted) args(i)
       else {
-        val lift = c.inferImplicitValue(appliedType(typeOf[Joy.Lift[_]], tpe), silent = true)
-        if (lift.nonEmpty) q"$lift($arg)"
-        else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
+        val arg = args(i)
+        val tpe = arg.tpe
+        if (tpe <:< typeOf[Joy]) arg
+        else {
+          val lift = c.inferImplicitValue(appliedType(typeOf[Joy.Lift[_]], tpe), silent = true)
+          if (lift.nonEmpty) q"$lift($arg)"
+          else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
+        }
+      }
+
+    implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>
+      def prepend(joys: List[Joy], t: Tree) =
+        joys.foldRight(t) { case (j, acc) => q"$j :: $acc" }
+      def append(t: Tree, joys: List[Joy]) =
+        joys.foldLeft(t) { case (acc, j) => q"$acc :+ $j" }
+
+      val (pre, middle) = joys.span(_ != Joy.Name(".."))
+      middle match {
+        case Nil =>
+          prepend(pre, q"$Nil")
+        case Joy.Name("..") :: Joy.Name(Hole(i)) :: rest =>
+          append(prepend(pre, arg(i, dotted = true)), rest)
+        case _ =>
+          c.abort(c.enclosingPosition, "incorrect usage of ..")
       }
     }
 
