@@ -50,22 +50,26 @@ package joy {
     def iterableT(tpe: Type): Type =
       IterableTParam.asSeenFrom(tpe, IterableClass)
 
-    def arg(i: Int, dotted: Boolean = false) =  {
-      val arg = args(i)
-      val tpe = if (!dotted) arg.tpe else iterableT(arg.tpe)
-      val subst: Tree => Tree =
-        if (tpe <:< typeOf[Joy]) identity
+    def arg(i: Int, dotted: Boolean = false) = method match {
+      case TermName("apply") =>
+        val arg = args(i)
+        val tpe = if (!dotted) arg.tpe else iterableT(arg.tpe)
+        val subst: Tree => Tree =
+          if (tpe <:< typeOf[Joy]) identity
+          else {
+            val LiftT = appliedType(typeOf[Joy.Lift[_]], tpe)
+            val lift = c.inferImplicitValue(LiftT, silent = true)
+            if (lift.nonEmpty) t => q"$lift($t)"
+            else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
+          }
+        if (!dotted) subst(arg)
         else {
-          val LiftT = appliedType(typeOf[Joy.Lift[_]], tpe)
-          val lift = c.inferImplicitValue(LiftT, silent = true)
-          if (lift.nonEmpty) t => q"$lift($t)"
-          else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
+          val x = TermName(c.freshName())
+          q"$arg.map { ($x: $tpe) => ${subst(q"$x")} }.toList"
         }
-      if (!dotted) subst(arg)
-      else {
-        val x = TermName(c.freshName())
-        q"$arg.map { ($x: $tpe) => ${subst(q"$x")} }.toList"
-      }
+      case TermName("unapply") =>
+        val x = TermName(s"x$i")
+        pq"$x @ _"
     }
 
     implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>
@@ -97,11 +101,17 @@ package joy {
     def wrap(joy: Joy): Tree = method match {
       case TermName("apply") => lift(joy)
       case TermName("unapply") =>
+        val (thenp, elsep) =
+          if (parts.length == 1) (q"true", q"false")
+          else {
+            val xs = parts.init.zipWithIndex.map { case (_, i) => val x = TermName(s"x$i"); q"$x" }
+            (q"_root_.scala.Some((..$xs))", q"_root_.scala.None")
+          }
         q"""
           new {
             def unapply(input: Joy) = input match {
-              case $joy => true
-              case _    => false
+              case $joy => $thenp
+              case _    => $elsep
             }
           }.unapply(..$args)
         """

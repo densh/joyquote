@@ -92,4 +92,18 @@ class QuotePatSuite extends FunSuite {
   test("1 2 +") {
     val j"1 2 +" = Joy.Program(List(Joy.Int(1), Joy.Int(2), Joy.Name("+")))
   }
+
+  test("$a $b +") {
+    val j"$a $b +" = j"1 2 +"
+  }
+
+  test("..$ab c") {
+    val j"..$ab c" = j"a b c"
+    val List(j"a", j"b") = ab
+  }
+
+  test("a ..$bc") {
+    val j"a ..$bc" = j"a b c"
+    val List(j"b", j"c") = bc
+  }
 }
