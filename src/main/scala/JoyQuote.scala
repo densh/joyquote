@@ -22,6 +22,12 @@ package joy {
 
     lazy val q"$_($_(..${parts: List[String]})).j[..$_](..$args)" = c.macroApplication
 
+    lazy val IterableClass: TypeSymbol =
+      typeOf[Iterable[_]].typeSymbol.asType
+
+    lazy val IterableTParam: Type =
+      IterableClass.typeParams(0).asType.toType
+
     def code() =
       parts.init.zipWithIndex.map { case (part, i) =>
         s"$part${Hole(i)}"
@@ -32,18 +38,26 @@ package joy {
       case _                     => joy
     }
 
-    def arg(i: Int, dotted: Boolean = false): Tree =
-      if (dotted) args(i)
-      else {
-        val arg = args(i)
-        val tpe = arg.tpe
-        if (tpe <:< typeOf[Joy]) arg
+    def iterableT(tpe: Type): Type =
+      IterableTParam.asSeenFrom(tpe, IterableClass)
+
+    def arg(i: Int, dotted: Boolean = false) =  {
+      val arg = args(i)
+      val tpe = if (!dotted) arg.tpe else iterableT(arg.tpe)
+      val subst: Tree => Tree =
+        if (tpe <:< typeOf[Joy]) identity
         else {
-          val lift = c.inferImplicitValue(appliedType(typeOf[Joy.Lift[_]], tpe), silent = true)
-          if (lift.nonEmpty) q"$lift($arg)"
+          val LiftT = appliedType(typeOf[Joy.Lift[_]], tpe)
+          val lift = c.inferImplicitValue(LiftT, silent = true)
+          if (lift.nonEmpty) t => q"$lift($t)"
           else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
         }
+      if (!dotted) subst(arg)
+      else {
+        val x = TermName(c.freshName())
+        q"$arg.map { ($x: $tpe) => ${subst(q"$x")} }.toList"
       }
+    }
 
     implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>
       def prepend(joys: List[Joy], t: Tree) =
