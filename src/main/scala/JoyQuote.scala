@@ -50,47 +50,64 @@ package joy {
     def iterableT(tpe: Type): Type =
       IterableTParam.asSeenFrom(tpe, IterableClass)
 
-    def arg(i: Int, dotted: Boolean = false) = method match {
+    type Lifted = (List[Tree], Tree)
+
+    def arg(i: Int, dotted: Boolean = false): Lifted = method match {
       case TermName("apply") =>
         val arg = args(i)
         val tpe = if (!dotted) arg.tpe else iterableT(arg.tpe)
         val subst: Tree => Tree =
           if (tpe <:< typeOf[Joy]) identity
           else {
-            val LiftT = appliedType(typeOf[Joy.Lift[_]], tpe)
-            val lift = c.inferImplicitValue(LiftT, silent = true)
+            val lift = c.inferImplicitValue(appliedType(typeOf[Joy.Lift[_]], tpe), silent = true)
             if (lift.nonEmpty) t => q"$lift($t)"
             else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
           }
-        if (!dotted) subst(arg)
+        if (!dotted) (Nil, subst(arg))
         else {
           val x = TermName(c.freshName())
-          q"$arg.map { ($x: $tpe) => ${subst(q"$x")} }.toList"
+          (Nil, q"$arg.map { ($x: $tpe) => ${subst(q"$x")} }.toList")
         }
       case TermName("unapply") =>
         val x = TermName(s"x$i")
         val subpattern = c.internal.subpatterns(args.head).get.apply(i)
         subpattern match {
           case pq"$_: $tpt" =>
-            val tpe = c.typecheck(tpt, c.TYPEmode).tpe
-            val UnliftT = appliedType(typeOf[Joy.Unlift[_]], tpe)
-            val unlift = c.inferImplicitValue(UnliftT, silent = true)
-            if (unlift.nonEmpty) pq"$unlift($x @ _)"
-            else c.abort(subpattern.pos, s"couldn't find implicit value of type Unlift[$tpe]")
-          case _ => pq"$x @ _"
+            val typed = c.typecheck(tpt, c.TYPEmode)
+            val tpe = if (!dotted) typed.tpe else iterableT(typed.tpe)
+            val unlift = c.inferImplicitValue(appliedType(typeOf[Joy.Unlift[_]], tpe), silent = true)
+            if (unlift.isEmpty)
+              c.abort(c.enclosingPosition,
+                s"couldn't find implicit value of type Unlift[$tpe]")
+            else if (!dotted) (Nil, pq"$unlift($x @ _)")
+            else {
+              val name = TermName(c.freshName("unlift"))
+              val pre = q"""
+                val $name: _root_.joy.Joy.Unlift.Elementwise[$tpe] =
+                  new _root_.joy.Joy.Unlift.Elementwise[$tpe]($unlift)
+              """
+              (pre :: Nil, pq"$name($x @ _)")
+            }
+          case _ => (Nil, pq"$x @ _")
         }
     }
 
-    implicit def liftJoys: Liftable[List[Joy]] = Liftable { joys =>
-      def prepend(joys: List[Joy], t: Tree) =
-        joys.foldRight(t) { case (j, acc) => q"_root_.scala.collection.immutable.::($j, $acc)" }
-      def append(t: Tree, joys: List[Joy]) =
-        joys.foldLeft(t) { case (acc, j) => q"_root_.joy.` :+ `($acc, $j)" }
+    def lift(joys: List[Joy]): Lifted = {
+      def prepend(joys: List[Joy], t: Lifted): Lifted =
+        joys.foldRight(t) { case (j, (pre, acc)) =>
+          val (jpre, jlifted) = lift(j)
+          (jpre ++: pre, q"_root_.scala.collection.immutable.::($jlifted, $acc)")
+        }
+      def append(t: Lifted, joys: List[Joy]): Lifted =
+        joys.foldLeft(t) { case ((pre, acc), j) =>
+          val (jpre, jlifted) = lift(j)
+          (jpre ++: pre, q"_root_.joy.` :+ `($acc, $jlifted)")
+        }
 
       val (pre, middle) = joys.span(_ != Joy.Name(".."))
       middle match {
         case Nil =>
-          prepend(pre, q"$Nil")
+          prepend(pre, (Nil, q"$Nil"))
         case Joy.Name("..") :: Joy.Name(Hole(i)) :: rest =>
           append(prepend(pre, arg(i, dotted = true)), rest)
         case _ =>
@@ -98,17 +115,23 @@ package joy {
       }
     }
 
-    implicit def lift[J <: Joy]: Liftable[J] = Liftable {
-      case Joy.Int(value)    => q"_root_.joy.Joy.Int($value)"
-      case Joy.Bool(value)   => q"_root_.joy.Joy.Bool($value)"
+    def lift(joy: Joy): Lifted = joy match {
+      case Joy.Int(value)    => (Nil, q"_root_.joy.Joy.Int($value)")
+      case Joy.Bool(value)   => (Nil, q"_root_.joy.Joy.Bool($value)")
       case Joy.Name(Hole(i)) => arg(i)
-      case Joy.Name(value)   => q"_root_.joy.Joy.Name($value)"
-      case Joy.Quoted(joys)  => q"_root_.joy.Joy.Quoted($joys)"
-      case Joy.Program(joys) => q"_root_.joy.Joy.Program($joys)"
+      case Joy.Name(value)   => (Nil, q"_root_.joy.Joy.Name($value)")
+      case Joy.Quoted(joys)  =>
+        val (pre, lifted) = lift(joys)
+        (pre, q"_root_.joy.Joy.Quoted($lifted)")
+      case Joy.Program(joys) =>
+        val (pre, lifted) = lift(joys)
+        (pre, q"_root_.joy.Joy.Program($lifted)")
     }
 
     def wrap(joy: Joy): Tree = method match {
-      case TermName("apply") => lift(joy)
+      case TermName("apply") =>
+        val (preamble, lifted) = lift(joy)
+        q"..$preamble; $lifted"
       case TermName("unapply") =>
         val (thenp, elsep) =
           if (parts.length == 1) (q"true", q"false")
@@ -116,11 +139,15 @@ package joy {
             val xs = parts.init.zipWithIndex.map { case (_, i) => val x = TermName(s"x$i"); q"$x" }
             (q"_root_.scala.Some((..$xs))", q"_root_.scala.None")
           }
+        val (preamble, lifted) = lift(joy)
         q"""
           new {
-            def unapply(input: Joy) = input match {
-              case $joy => $thenp
-              case _    => $elsep
+            def unapply(input: Joy) = {
+              ..$preamble
+              input match {
+                case $lifted => $thenp
+                case _       => $elsep
+              }
             }
           }.unapply(..$args)
         """

@@ -67,5 +67,12 @@ object Joy {
     implicit def unliftList[T](implicit unlift: Unlift[T]): Unlift[List[T]] = Unlift {
       case Joy.Quoted(elems) if elems.forall(unlift.unapply(_).nonEmpty) => elems.flatMap(unlift.unapply(_))
     }
+
+    final class Elementwise[T](unlift: Unlift[T]) {
+      def unapply(lst: List[Joy]): Option[List[T]] = {
+        val unlifted = lst.flatMap { unlift.unapply(_) }
+        if (unlifted.length == lst.length) Some(unlifted) else None
+      }
+    }
   }
 }
