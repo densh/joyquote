@@ -17,8 +17,8 @@ object Joy {
   final case class Int(value: scala.Int) extends Joy
   final case class Bool(value: scala.Boolean) extends Joy
   final case class Name(value: String) extends Joy
-  final case class Quoted(elems: List[Joy]) extends Joy
-  final case class Program(elems: List[Joy]) extends Joy
+  final case class Quoted(elems: List[Joy]) extends Iterable[Joy] with Joy { def iterator = elems.iterator }
+  final case class Program(elems: List[Joy]) extends Iterable[Joy] with Joy { def iterator = elems.iterator }
 
   object parse extends RegexParsers {
     val lexical = new StdLexical

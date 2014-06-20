@@ -64,4 +64,14 @@ class QuoteSuite extends FunSuite {
     val ints = List(1, 2)
     val Joy.Program(List(Joy.Int(0), Joy.Int(1), Joy.Int(2))) = j"0 ..$ints"
   }
+
+  test("..$prog +") {
+    val prog = j"1 2"
+    val Joy.Program(List(Joy.Int(1), Joy.Int(2), Joy.Name("+"))) = j"..$prog +"
+  }
+
+  test("0 ..$prog") {
+    val prog = j"1 2"
+    val Joy.Program(List(Joy.Int(0), Joy.Int(1), Joy.Int(2))) = j"0 ..$prog"
+  }
 }
