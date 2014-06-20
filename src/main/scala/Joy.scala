@@ -44,4 +44,15 @@ object Joy {
 
     def apply(s: String) = phrase(progr)(new CharSequenceReader(s))
   }
+
+  trait Lift[T] { def apply(value: T): Joy }
+  object Lift {
+    def apply[T](f: T => Joy): Lift[T] = new Lift[T] { def apply(value: T) = f(value) }
+
+    implicit def liftJoy[J <: Joy]: Lift[J] = Lift(identity)
+    implicit def liftInt[T <: scala.Int]: Lift[T] = Lift { i => Joy.Int(i) }
+    implicit def liftBool[T <: Boolean]: Lift[T] = Lift { b => Joy.Bool(b) }
+    implicit def liftSym: Lift[Symbol] = Lift { sym => Joy.Name(sym.name) }
+    implicit def liftList[T](implicit liftT: Lift[T]): Lift[List[T]] = Lift { l => Joy.Quoted(l.map(liftT(_))) }
+  }
 }

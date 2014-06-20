@@ -3,7 +3,7 @@ import scala.reflect.macros.whitebox.Context
 
 package object joy {
   implicit class JoyQuote(ctx: StringContext) {
-    def j(args: Joy*): Joy = macro JoyQuoteImpl.apply
+    def j[T](args: T*): Joy = macro JoyQuoteImpl.apply
   }
 }
 
@@ -20,7 +20,7 @@ package joy {
   private[joy] class JoyQuoteImpl(val c: Context) {
     import c.universe._
 
-    lazy val q"$_($_(..${parts: List[String]})).j(..$args)" = c.macroApplication
+    lazy val q"$_($_(..${parts: List[String]})).j[..$_](..$args)" = c.macroApplication
 
     def code() =
       parts.init.zipWithIndex.map { case (part, i) =>
@@ -32,10 +32,21 @@ package joy {
       case _                     => joy
     }
 
+    def arg(i: Int): Tree = {
+      val arg = args(i)
+      val tpe = arg.tpe
+      if (tpe <:< typeOf[Joy]) arg
+      else {
+        val lift = c.inferImplicitValue(appliedType(typeOf[Joy.Lift[_]], tpe), silent = true)
+        if (lift.nonEmpty) q"$lift($arg)"
+        else c.abort(arg.pos, s"couldn't find implicit value of type Lift[$tpe]")
+      }
+    }
+
     implicit def lift[J <: Joy]: Liftable[J] = Liftable {
       case Joy.Int(value)    => q"_root_.joy.Joy.Int($value)"
       case Joy.Bool(value)   => q"_root_.joy.Joy.Bool($value)"
-      case Joy.Name(Hole(i)) => args(i)
+      case Joy.Name(Hole(i)) => arg(i)
       case Joy.Name(value)   => q"_root_.joy.Joy.Name($value)"
       case Joy.Quoted(joys)  => q"_root_.joy.Joy.Quoted($joys)"
       case Joy.Program(joys) => q"_root_.joy.Joy.Program($joys)"

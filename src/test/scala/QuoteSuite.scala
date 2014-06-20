@@ -26,4 +26,22 @@ class QuoteSuite extends FunSuite {
     val two = j"2"
     val Joy.Program(List(Joy.Int(2), Joy.Int(2), Joy.Name("+"))) = j"$two $two +"
   }
+
+  test("${42}") {
+    val Joy.Int(42) = j"${42}"
+  }
+
+  test("${'foo}") {
+    val Joy.Name("foo") = j"${'foo}"
+  }
+
+  test("$xs") {
+    val xs = List(j"x1", j"x2")
+    val Joy.Quoted(List(Joy.Name("x1"), Joy.Name("x2"))) = j"$xs"
+  }
+
+  test("$ints") {
+    val ints = List(1, 2)
+    val Joy.Quoted(List(Joy.Int(1), Joy.Int(2))) = j"$ints"
+  }
 }
